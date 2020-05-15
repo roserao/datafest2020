@@ -1,6 +1,6 @@
 # UCLAdatafest2020
-##Group: Exponential Families
-##Members: Rose, Susan, Lamings, Matthew
+## Group: Exponential Families
+## Members: Rose, Susan, Lamings, Matthew
 
 hashtag_count.py: the python source code reads in the kaggle dataset and identifies the hashtag in each tweet. The output is a csv file containing the counts of hashtag in the "hashtag_list.txt" for each day. 
 
