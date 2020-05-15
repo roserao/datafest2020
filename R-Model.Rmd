@@ -1,0 +1,146 @@
+---
+title: "Test3"
+author: "Jingyou Rao"
+date: "5/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("~/Desktop/Datafest/Rmodel")
+library(leaps)
+```
+
+```{r}
+# import count data
+count = read.csv("daily_hashtag_count.csv", header = FALSE)
+colnames(count) <- c("Hashtag", "Percentage", "Date")
+levels(count$Hashtag)
+```
+
+```{r}
+# combine certain hashtags: create count_v1
+# Change1: group and name to combine
+count_v1 <- count
+hashtag_of_interest <- levels(count$Hashtag)
+group1 <- hashtag_of_interest[c(5,6,7)] # shutdown
+group2 <- hashtag_of_interest[c(8,9)] # social distancing
+group3 <- hashtag_of_interest[c(10,11,12,13)] # stay home
+group <- list(group1, group2, group3)
+name <- c("#shutdown", "#socialdistancing", "#stayhome")
+
+for (d in levels(count$Date)) {
+  for (i in 1:length(group)) {
+    index <- intersect(which(count_v1$Date == d), which(count_v1$Hashtag %in% group[[i]]))
+    count_v1[index[1], ] <- data.frame(name[i], sum(count_v1$Percentage[index]), d)
+    count_v1 <- count_v1[-index[2:length(index)],]
+  }
+}
+count_v1 <- droplevels(count_v1)
+rm(i, d, index, name, group1, group2, group3)
+```
+
+```{r}
+# build a new dataframe to prepare for incorporating event list: count_v2
+#hashtag_of_interest <- levels(count_v1$Hashtag)
+hashtag_of_interest <- c("#stayhome") #!!! CHANGE HERE: THE HASHTAG 
+
+for (x in hashtag_of_interest) {
+  hashtag_df <- count_v1[which(count_v1$Hashtag == x), ]
+  hashtag_df <- hashtag_df[order(as.Date(hashtag_df$Date)),]
+  if (x == hashtag_of_interest[1]) {
+    count_v2 <- data.frame("Date" = hashtag_df$Date, "Temp" = hashtag_df$Percentage)
+  } else {
+    count_v2 = cbind(count_v2, hashtag_df$Percentage)
+  }
+}
+colnames(count_v2) <- c("Date", hashtag_of_interest)
+rm(hashtag_df, x)
+```
+
+```{r}
+# import event data
+event <- read.csv("event_new.csv")
+event$Date <- as.character(event$Date)
+```
+
+```{r}
+# calculate the weight score for each day for each category: event_v1
+# Three day weight: TODO: adjust here
+weight <- c(100, 50, 20)
+event_v1 <- event
+for (j in 2:ncol(event)) { 
+  for (i in 1:nrow(event)) {
+    event_v1[i, j] <- 0
+  }
+} # zeros the data frame
+for (j in 2:ncol(event)) {
+  for (i in 1:nrow(event)) {
+    if (!is.na(event[i, j])) {
+      num = event[i, j]
+      for (k in i:min(i+2, nrow(event))) {
+        event_v1[k,j] <- event_v1[k,j] + num*weight[k-i+1]
+      }
+    }
+  }
+}
+rm(i, j, k, num)
+```
+
+```{r}
+# incorporate event data to form count_v3
+count_v3 <- cbind(count_v2, event_v1[,-1])
+```
+
+```{r}
+# if we want to build the model on hashtag "#stayhome"
+# test model
+testmodel <- lm(`#stayhome` ~ ., data = count_v3[,2:ncol(count_v3)])
+summary(testmodel)
+anova(testmodel)
+fvalues = anova(testmodel)[4]
+fvalues = fvalues[order(fvalues$`F value`, decreasing = T),,drop = F]
+head(fvalues, 10)
+# select
+# policy_us, pubhealth_world, pubhealth_us, socioecon_other
+# opinion_other, opinion_sci, socioecon_world
+```
+
+```{r}
+model1 <- lm(`#stayhome` ~ policy_us + pubhealth_world + pubhealth_us + socioecon_other +
+               opinion_other + opinion_sci + socioecon_world, data = count_v3)
+summary(model1)
+anova(model1)
+anova(model1, testmodel)
+```
+
+```{r}
+# All possible subsets to select variables
+X <- count_v3[, c(5, 6, 7, 11, 13, 16, 17)]
+b <- regsubsets(x= as.matrix(X), y = count_v3$`#stayhome`)
+rs <- summary(b)
+plot(1:7, rs$adjr2, xlab="Subset Size", ylab="Adjusted R-squared") # 5 variables
+# AIC and BIC to select variable
+n = nrow(count_v3)
+stepAIC <- step(model1, direction = "backward", data = count_v3) # 5 variables
+# `#stayhome` ~ pubhealth_world + pubhealth_us + opinion_other + opinion_sci + socioecon_world
+backBIC <- step(model1, direction = "backward", data = count_v3, k = log(n)) # 3 variables
+# `#stayhome` ~ pubhealth_world + pubhealth_us + socioecon_world
+```
+
+```{r}
+model2 <- lm(`#stayhome` ~ pubhealth_world + pubhealth_us + opinion_other + 
+               opinion_sci + socioecon_world, data = count_v3)
+summary(model2)
+anova(model2)
+# diagnostics
+vif(model2) # all lower than 1
+par(mfrow = c(2,2))
+plot(model2) # normality good, constant variance and linarity ok, valid model
+```
+
+
+
